@@ -1,0 +1,30 @@
+name: Continuous integration
+
+on: [push, pull_request]
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/ruff-action@v3
+      - run: ruff format --check src tests
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: [ "3.9", "3.12" ]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+      - name: "uv: the cache was restored"
+        if: steps.setup-uv.outputs.cache-hit == 'true'
+        run: echo "uv cache was restored"
+      - name: Prepare environment
+        run: uv pip install -e .[dev]
+      - name: Run tests with python ${{ matrix.python-version }}
+        run: uv run pytest --cov-report=term --cov cornice
