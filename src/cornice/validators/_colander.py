@@ -2,11 +2,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import colander
-import collections
-import webob.multidict
 import inspect
 import warnings
+from collections.abc import Mapping
+
+from webob.multidict import MultiDict
 
 
 def _generate_colander_validator(location):
@@ -150,22 +150,20 @@ def _none_to_null(data):
     """Replace all `None` values with `colander.null` in the given
     structure because `deserialize` expects `colander.null`.
     """
+    from colander import null
+
     if data is None:
-        return colander.null
-    elif not data:
+        return null
+    if not data:
         return data
-    elif isinstance(data, webob.multidict.MultiDict):
-        new_data = webob.multidict.MultiDict()
-        for key in data:
-            values = data.getall(key)
-            for value in values:
-                new_data[key] = _none_to_null(value)
-        data = new_data
-    elif isinstance(data, collections.Mapping):
+    if isinstance(data, MultiDict):
+        raise TypeError(
+            "Colander fails to parse multidict type return values, it should have been caught by cornice.validators.extract_cstruct"
+        )
+    if isinstance(data, Mapping):
         for key in data:
             data[key] = _none_to_null(data[key])
-    elif isinstance(data, list):
-        data = [_none_to_null(value) for value in data]
-    elif isinstance(data, set):
-        data = (_none_to_null(value) for value in data)
+        return data
+    if isinstance(data, (list, set, tuple)):
+        return type(data)(_none_to_null(value) for value in data)
     return data

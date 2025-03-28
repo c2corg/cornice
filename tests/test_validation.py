@@ -10,7 +10,6 @@ from unittest import mock
 from pyramid.request import Request
 from webtest import TestApp
 
-from tests.support import get_request
 
 try:
     import colander
@@ -559,15 +558,9 @@ class TestErrorMessageTranslationColander(TestCase):
 
 @skip_if_no_colander
 class TestValidatorEdgeCases(TestCase):
-    @staticmethod
-    def _create_request_schema(schema):
-        class Schema(colander.MappingSchema):
-            body = schema()
-        return Schema
-
     def test_schema_class_deprecated(self):
-        RequestSchema = TestValidatorEdgeCases._create_request_schema(
-            colander.MappingSchema)
+        class RequestSchema(colander.MappingSchema):
+            body = colander.MappingSchema()
 
         request = DummyRequest()
         request.validated = {}
@@ -591,45 +584,73 @@ class TestValidatorEdgeCases(TestCase):
         self.assertEqual(request.validated, mock.sentinel.validated)
         self.assertEqual(len(request.errors), 0)
 
+
+@skip_if_no_colander
+class TestValidatorEdgeCasesColander(TestCase):
+    """
+    Refs:
+    * https://github.com/Cornices/cornice/pull/359
+    * https://github.com/Pylons/colander/issues/276
+    * https://github.com/stefanofontanelli/ColanderAlchemy/pull/90
+    """
+
+    @staticmethod
+    def get_request(body):
+        string_body = json.dumps(body)
+        json_body = json.loads(string_body)
+        return DummyRequest(body=string_body, json_body=json_body)
+
+    @staticmethod
+    def _create_request_schema(schema):
+        class Schema(colander.MappingSchema):
+            body = schema()
+
+        return Schema
+
+    def test_schema_class_deprecated(self):
+        request = DummyRequest()
+        request.validated = {}
+        with warnings.catch_warnings(record=True) as w:
+            warnings.resetwarnings()
+            colander_validator(request, schema=self._create_request_schema(colander.MappingSchema))
+        self.assertEqual(len(w), 1)
+        self.assertIs(w[0].category, DeprecationWarning)
+
     def test_schema_sequence_none(self):
         """None can be passed to a sequence field"""
+
         class BodyNoneSchema(colander.MappingSchema):
             foo = colander.SchemaNode(colander.String())
             bar = colander.SchemaNode(
-                colander.Sequence(),
-                colander.SchemaNode(colander.String()), missing=None)
+                colander.Sequence(), colander.SchemaNode(colander.String()), missing=None
+            )
 
-        RequestBodyNoneSchema = TestValidatorEdgeCases._create_request_schema(
-            BodyNoneSchema)
-
-        request = get_request(body={"foo": "1", "bar": None})
+        request = self.get_request(body={"foo": "1", "bar": None})
         request.validated = {}
-        colander_validator(request, schema=RequestBodyNoneSchema)
+        colander_validator(request, schema=self._create_request_schema(BodyNoneSchema))
         self.assertEqual(len(request.errors), 0)
 
     def test_schema_sequence_nested_none(self):
         """None can be passed to a nested sequence field"""
+
         class BodyNoneSchema(colander.MappingSchema):
             foo = colander.SchemaNode(colander.String())
             bar = colander.SchemaNode(
-                colander.Sequence(),
-                colander.SchemaNode(colander.String()), missing=None)
+                colander.Sequence(), colander.SchemaNode(colander.String()), missing=None
+            )
 
         class BodyNestedNoneSchema(colander.MappingSchema):
             a = colander.SchemaNode(colander.String())
             b = BodyNoneSchema()
 
-        RequestBodyNestedNoneSchema = \
-            TestValidatorEdgeCases._create_request_schema(
-                BodyNestedNoneSchema)
-
-        request = get_request(body={"a": "a", "b": {"foo": "abc", "bar": None}})
+        request = self.get_request(body={"a": "a", "b": {"foo": "abc", "bar": None}})
         request.validated = {}
-        colander_validator(request, schema=RequestBodyNestedNoneSchema)
+        colander_validator(request, schema=self._create_request_schema(BodyNestedNoneSchema))
         self.assertEqual(len(request.errors), 0)
 
     def test_schema_nested_none(self):
         """None can be passed to a mapping field"""
+
         class SchemaA(colander.MappingSchema):
             val = colander.SchemaNode(colander.String())
 
@@ -639,21 +660,21 @@ class TestValidatorEdgeCases(TestCase):
         class BodySchemaC(colander.MappingSchema):
             b = SchemaB()
 
-        RequestBodySchemaC = TestValidatorEdgeCases._create_request_schema(
-            BodySchemaC)
+        RequestBodySchemaC = self._create_request_schema(BodySchemaC)
 
-        request = get_request(body={"b": {"a": {"val": "ok"}}})
+        request = self.get_request(body={"b": {"a": {"val": "ok"}}})
         request.validated = {}
         colander_validator(request, schema=RequestBodySchemaC)
         self.assertEqual(len(request.errors), 0)
 
-        request = get_request(body={"b": {"a": None}})
+        request = self.get_request(body={"b": {"a": None}})
         request.validated = {}
         colander_validator(request, schema=RequestBodySchemaC)
         self.assertEqual(len(request.errors), 0)
 
     def test_schema_nested_tuple_none(self):
         """None can be passed to a tuple field"""
+
         class Tuple(colander.TupleSchema):
             val1 = colander.SchemaNode(colander.String())
             val2 = colander.SchemaNode(colander.Int())
@@ -664,19 +685,18 @@ class TestValidatorEdgeCases(TestCase):
         class BodyNestedTupleSchema(colander.MappingSchema):
             n = TupleSchema()
 
-        RequestBodyNestedTupleSchema = \
-            TestValidatorEdgeCases._create_request_schema(
-                BodyNestedTupleSchema)
+        RequestBodyNestedTupleSchema = self._create_request_schema(BodyNestedTupleSchema)
 
-        request = get_request(body={"n": {"t": ["s", 1]}})
+        request = self.get_request(body={"n": {"t": ["s", 1]}})
         request.validated = {}
         colander_validator(request, schema=RequestBodyNestedTupleSchema)
         self.assertEqual(len(request.errors), 0)
 
-        request = get_request(body={"n": {"t": None}})
+        request = self.get_request(body={"n": {"t": None}})
         request.validated = {}
         colander_validator(request, schema=RequestBodyNestedTupleSchema)
         self.assertEqual(len(request.errors), 0)
+
 
 class TestExtractedJSONValueTypes(unittest.TestCase):
     """Make sure that all JSON string values extracted from the request
